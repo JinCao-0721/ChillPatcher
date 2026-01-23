@@ -2,57 +2,150 @@
 
 > 🔗 **本项目是 [BeyondtheApex/ChillPatcher](https://github.com/BeyondtheApex/ChillPatcher) 的 Fork 版本**
 >
-> 在原项目基础上添加了 **QQ 音乐** 支持。感谢原作者的优秀工作！
+> 基于 ChillPatcher 1.0.12.3 修改，新增 QQ 音乐支持。感谢原作者的优秀工作！
 
 ---
 
 ## 🆕 Fork 新增功能
 
-### ⌨️ 输入模式切换
+- **🎵 QQ 音乐模块** - 支持播放 QQ 音乐歌单
+- **⌨️ F5 快捷键** - 切换游戏/桌面键盘输入模式
 
-| 按键 | 功能 |
-|------|------|
-| **F5** | 切换桌面输入 / 游戏输入模式 |
+---
 
-### 🎵 QQ 音乐支持
+## 📦 安装说明
 
-- **📋 歌单支持**：在配置文件中添加歌单 ID 后可导入播放
-- **💿 专辑封面**：自动加载歌曲封面
-- **🔊 流式播放**：PCM 流式解码，低内存占用
+### 1. 安装 BepInEx 框架
 
-### QQ 音乐配置
+下载 [BepInEx 5.x](https://github.com/BepInEx/BepInEx/releases) 并解压到游戏目录。
 
-在 `BepInEx\config\com.chillpatcher.plugin.cfg` 中添加：
+### 2. 安装 ChillPatcher
+
+将 `ChillPatcher` 文件夹复制到：
+```
+<游戏目录>/BepInEx/plugins/
+```
+
+### 3. 安装 ffmpeg（QQ 音乐必需）
+
+- 下载：https://ffmpeg.org/download.html
+- 将 `ffmpeg.exe` 添加到系统 PATH，或直接放到游戏根目录
+
+### 4. 首次启动
+
+启动游戏，等待配置文件生成后关闭。
+
+---
+
+## 🎵 QQ 音乐配置
+
+### 步骤一：获取 Cookie
+
+1. 打开浏览器，访问 https://y.qq.com 并登录
+2. 按 `F12` 打开开发者工具
+3. 点击 `控制台 (Console)` 标签
+4. 输入以下代码并按回车：
+   ```javascript
+   document.cookie
+   ```
+5. 右键点击输出的内容 → 复制字符串内容
+
+### 步骤二：配置 Cookie
+
+1. 打开配置文件：`BepInEx/config/com.chillpatcher.plugin.cfg`
+2. 找到 `[Module:com.chillpatcher.qqmusic]` 部分
+   > ⚠️ 如果找不到，请将 `config_template` 中的模板内容复制到配置文件末尾
+3. 在 `ManualCookie =` 后面粘贴 Cookie
+   > ⚠️ **重要：Cookie 必须在同一行，不能有换行！**
+
+### 步骤三：配置歌单
+
+1. 找到 `CustomPlaylistIds` 配置项
+2. 填入歌单 ID（从 QQ 音乐网页版 URL 获取）
+   - 例如：`https://y.qq.com/n/ryqq/playlist/8519278859`
+   - 其中 `8519278859` 就是歌单 ID
+3. 多个歌单用逗号分隔
+
+### 配置示例
 
 ```ini
 [Module:com.chillpatcher.qqmusic]
-
-## QQ 音乐 Cookie（必填）
-## 从浏览器开发者工具获取
-# Setting type: String
-ManualCookie =
-
-## 要导入的歌单 ID（用逗号分隔）
-## 在 QQ 音乐网页版打开歌单，URL 中的数字即为歌单 ID
-## 例如：https://y.qq.com/n/ryqq/playlist/8888888888 中的 8888888888
-# Setting type: String
-PlaylistIds =
+AudioQuality = 0
+CustomPlaylistIds = 8519278859,1234567890
+ManualCookie = qqmusic_key=xxx; qm_keyst=xxx; uin=123456; tmeLoginType=2
 ```
 
-### 如何获取 Cookie
+### 音质选项
 
-1. 在浏览器中登录 [QQ 音乐网页版](https://y.qq.com/)
-2. 按 `F12` 打开开发者工具
-3. 切换到 `Network`（网络）标签
-4. 刷新页面，点击任意请求
-5. 在 `Headers`（标头）中找到 `Cookie`
-6. 复制整个 Cookie 值到配置文件
+| AudioQuality | 音质 | 说明 |
+|--------------|------|------|
+| 0 | 标准 (128kbps M4A) | **目前仅支持此选项** |
+| 1 | 高品质 (320kbps) | 暂不支持 |
+| 2 | 无损 (FLAC) | 暂不支持 |
+| 3 | Hi-Res | 暂不支持 |
 
-### 注意事项
+---
 
-- ⚠️ Cookie 会过期，需要定期更新
-- ⚠️ 请勿分享你的 Cookie（包含登录凭证）
-- ⚠️ 目前仅支持标准音质 (128kbps)
+## ⌨️ 快捷键
+
+| 按键 | 功能 |
+|------|------|
+| **F5** | 切换键盘输入模式（游戏模式 ↔ 桌面模式） |
+
+- **游戏模式**：键盘输入发送到游戏（搜索、中文输入等）
+- **桌面模式**：键盘输入发送到系统（可以切换窗口、打字等）
+
+---
+
+## 🖥️ 壁纸引擎设置（重要）
+
+如果其他窗口最大化后音乐停止播放，需要修改壁纸引擎设置：
+
+1. 打开 Wallpaper Engine 主程序
+2. 点击右上角齿轮图标（设置）
+3. 找到 **性能** 选项卡，修改以下设置：
+
+| 设置项 | 改为 |
+|--------|------|
+| 其他应用程序最大化 | 继续运行 |
+| 其他应用程序全屏 | 继续运行 |
+
+4. 确保 **其他媒体播放时静音** 设为 **否**
+
+---
+
+## ❓ 常见问题
+
+**Q: 找不到 `[Module:com.chillpatcher.qqmusic]` 配置部分？**
+
+A: 将 `config_template/com.chillpatcher.plugin.cfg.template` 的内容复制到配置文件末尾
+
+**Q: QQ 音乐无法播放？**
+
+A: 先检查缓存目录是否有音乐文件：
+```
+BepInEx/plugins/ChillPatcher/Modules/com.chillpatcher.qqmusic/data/audio_cache/
+```
+- 如果有 `.m4a` 文件但无法播放 → 音乐还没下载完，稍等片刻
+- 如果没有文件 → 检查 Cookie 配置是否正确
+
+其他排查步骤：
+1. 检查 Cookie 是否正确配置（必须在同一行）
+2. Cookie 可能过期，重新获取
+3. 检查歌单 ID 是否正确
+4. 确保已安装 ffmpeg
+
+**Q: 播放 VIP 歌曲提示失败？**
+
+A: 需要 QQ 音乐 VIP 会员（豪华绿钻）
+
+**Q: 首次播放歌曲很慢？**
+
+A: 正常现象，需要下载音频文件并转换格式（约 1-3 秒）
+
+**Q: Cookie 多久过期？**
+
+A: 通常几天到几周，过期后重新获取即可
 
 ---
 
