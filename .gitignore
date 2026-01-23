@@ -8,6 +8,13 @@ build/
 netease_bridge/*.dll
 netease_bridge/*.h
 
+# QQMusic bridge built artifacts (Go DLL)
+qqmusic_bridge/*.dll
+qqmusic_bridge/*.h
+
+# Built output folder
+ChillPatcher/
+
 .vscode/
 
 *.log
