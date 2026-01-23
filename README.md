@@ -1,4 +1,62 @@
-# ChillPatcher
+# ChillPatcher (QQ Music Fork)
+
+> 🔗 **本项目是 [BeyondtheApex/ChillPatcher](https://github.com/BeyondtheApex/ChillPatcher) 的 Fork 版本**
+>
+> 在原项目基础上添加了 **QQ 音乐** 支持。感谢原作者的优秀工作！
+
+---
+
+## 🆕 Fork 新增功能
+
+### ⌨️ 输入模式切换
+
+| 按键 | 功能 |
+|------|------|
+| **F5** | 切换桌面输入 / 游戏输入模式 |
+
+### 🎵 QQ 音乐支持
+
+- **📋 歌单支持**：在配置文件中添加歌单 ID 后可导入播放
+- **💿 专辑封面**：自动加载歌曲封面
+- **🔊 流式播放**：PCM 流式解码，低内存占用
+
+### QQ 音乐配置
+
+在 `BepInEx\config\com.chillpatcher.plugin.cfg` 中添加：
+
+```ini
+[Module:com.chillpatcher.qqmusic]
+
+## QQ 音乐 Cookie（必填）
+## 从浏览器开发者工具获取
+# Setting type: String
+ManualCookie =
+
+## 要导入的歌单 ID（用逗号分隔）
+## 在 QQ 音乐网页版打开歌单，URL 中的数字即为歌单 ID
+## 例如：https://y.qq.com/n/ryqq/playlist/8888888888 中的 8888888888
+# Setting type: String
+PlaylistIds =
+```
+
+### 如何获取 Cookie
+
+1. 在浏览器中登录 [QQ 音乐网页版](https://y.qq.com/)
+2. 按 `F12` 打开开发者工具
+3. 切换到 `Network`（网络）标签
+4. 刷新页面，点击任意请求
+5. 在 `Headers`（标头）中找到 `Cookie`
+6. 复制整个 Cookie 值到配置文件
+
+### 注意事项
+
+- ⚠️ Cookie 会过期，需要定期更新
+- ⚠️ 请勿分享你的 Cookie（包含登录凭证）
+- ⚠️ 目前仅支持标准音质 (128kbps)
+
+---
+
+## 原项目功能
 
 这是一个 BepInEx 插件，包括多种新的功能改进
 - 为游戏真正的flac支持.
