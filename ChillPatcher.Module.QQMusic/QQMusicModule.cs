@@ -110,14 +110,14 @@ namespace ChillPatcher.Module.QQMusic
             // Check login status
             _isLoggedIn = _bridge.IsLoggedIn;
 
-            // Try manual cookie if not logged in and cookie is configured
-            if (!_isLoggedIn && !string.IsNullOrWhiteSpace(_manualCookie?.Value))
+            // Always try to set manual cookie if configured (to update cached cookie)
+            if (!string.IsNullOrWhiteSpace(_manualCookie?.Value))
             {
-                _logger?.LogInfo("Attempting login with manual cookie...");
+                _logger?.LogInfo("Setting manual cookie from config...");
                 if (_bridge.SetCookie(_manualCookie.Value))
                 {
                     _isLoggedIn = _bridge.IsLoggedIn;
-                    _logger?.LogInfo($"Manual cookie login result: {_isLoggedIn}");
+                    _logger?.LogInfo($"Manual cookie set successfully, login status: {_isLoggedIn}");
                 }
                 else
                 {
