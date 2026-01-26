@@ -100,7 +100,8 @@ namespace ChillPatcher.Patches
             // 按钮名称
             public const string IconExit = "IconExit_Button";
             public const string IconStory = "IconStory_Button";
-            public const string IconCollaboToAlterEgo = "IconCollaboToAlterEgo_Button";
+            public const string IconSpecial = "IconSpecial_Button";  // "特别"按钮
+            public const string IconCollaboToAlterEgo = "IconCollaboToAlterEgo_Button";  // 旧名称，保留兼容
             public const string IconDecoration = "IconDecoration_Button";
             public const string IconEnviroment = "IconEnviroment_Button";
             public const string IconMusicPlaylist = "IconMusicPlaylist_Button";
@@ -152,19 +153,21 @@ namespace ChillPatcher.Patches
 
                 // 2. 从 LeftIcons 移动按钮到 TopIcons
                 MoveButtonToParent(leftIcons, ButtonPaths.IconStory, topIcons);
-                MoveButtonToParent(leftIcons, ButtonPaths.IconCollaboToAlterEgo, topIcons);
 
-                // 3. 从 CenterIcons 移动按钮到 TopIcons
+                // 3. 将"特别"按钮移动到 TopIcons（右侧边栏）
+                MoveButtonToParent(leftIcons, ButtonPaths.IconSpecial, topIcons);
+
+                // 4. 从 CenterIcons 移动按钮到 TopIcons
                 MoveButtonToParent(centerIcons, ButtonPaths.IconDecoration, topIcons);
                 MoveButtonToParent(centerIcons, ButtonPaths.IconEnviroment, topIcons);
 
-                // 4. 将 UI_FacilityMusic 移动到 LeftIcons 的位置
+                // 5. 将 UI_FacilityMusic 移动到 LeftIcons 的位置
                 MoveFacilityMusicToLeftIcons(leftIcons);
 
-                // 5. 调整 TopIcons 的布局
+                // 6. 调整 TopIcons 的布局
                 AdjustTopIconsLayout(topIcons);
-                
-                // 6. 调整 RightIcons 的缩放和偏移
+
+                // 7. 调整 RightIcons 的缩放和偏移
                 if (rightIcons != null)
                 {
                     // 应用缩放
@@ -182,7 +185,7 @@ namespace ChillPatcher.Patches
                     }
                 }
                 
-                // 7. 根据配置处理 BottomBackImage
+                // 8. 根据配置处理 BottomBackImage
                 if (UIFrameworkConfig.HideBottomBackImage.Value)
                 {
                     var bottomBackImage = GameObject.Find(ButtonPaths.BottomBackImage);
@@ -207,7 +210,7 @@ namespace ChillPatcher.Patches
                     }
                 }
                 
-                // 8. 移动 IconMusicPlaylist_Button 到 UI_FacilityMusic 上方
+                // 9. 移动 IconMusicPlaylist_Button 到 UI_FacilityMusic 上方
                 MoveMusicPlaylistButton(centerIcons);
 
                 _hasRearranged = true;
