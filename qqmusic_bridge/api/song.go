@@ -12,27 +12,35 @@ import (
 func (c *Client) GetSongURLFCG(songMid string, quality models.AudioQuality) (*models.SongURL, error) {
 	c.mu.RLock()
 	cookies := c.cookies
+	uin := c.uin
 	c.mu.RUnlock()
 
-	debugLog("[GetSongURLFCG] Getting URL for %s, quality=%s", songMid, quality)
+	debugLog("[GetSongURLFCG] Getting URL for %s, quality=%s, uin=%d", songMid, quality, uin)
 
-	// Simple request without filename - let server auto-select available quality
+	// Build filename with quality prefix to request specific quality
+	prefix := quality.GetFilePrefix()
+	ext := quality.GetFileExt()
+	filename := fmt.Sprintf("%s%s.%s", prefix, songMid, ext)
+	debugLog("[GetSongURLFCG] Requesting filename: %s", filename)
+
+	// Request with filename to specify quality
 	reqData := map[string]interface{}{
 		"req_1": map[string]interface{}{
 			"module": "vkey.GetVkeyServer",
 			"method": "CgiGetVkey",
 			"param": map[string]interface{}{
-				"guid":      "0",
+				"filename":  []string{filename},
+				"guid":      c.guid,
 				"songmid":   []string{songMid},
 				"songtype":  []int{0},
-				"uin":       "0",
+				"uin":       fmt.Sprintf("%d", uin),
 				"loginflag": 1,
 				"platform":  "20",
 			},
 		},
 		"comm": map[string]interface{}{
 			"format": "json",
-			"uin":    0,
+			"uin":    uin,
 			"ct":     24,
 			"cv":     0,
 		},
@@ -67,6 +75,7 @@ func (c *Client) GetSongURLFCG(songMid string, quality models.AudioQuality) (*mo
 		Req1 struct {
 			Code int `json:"code"`
 			Data struct {
+				Msg        string   `json:"msg"`
 				Sip        []string `json:"sip"`
 				Midurlinfo []struct {
 					Purl     string `json:"purl"`
@@ -85,6 +94,12 @@ func (c *Client) GetSongURLFCG(songMid string, quality models.AudioQuality) (*mo
 	if result.Req1.Code != 0 {
 		debugLog("[GetSongURLFCG] Req1 error code: %d", result.Req1.Code)
 		return nil, fmt.Errorf("FCG API error: %d", result.Req1.Code)
+	}
+
+	// Check if server indicates file not found (404) in message
+	if strings.Contains(result.Req1.Data.Msg, "404") {
+		debugLog("[GetSongURLFCG] Server indicates 404 in msg: %s", result.Req1.Data.Msg)
+		return nil, fmt.Errorf("file not available (404)")
 	}
 
 	if len(result.Req1.Data.Midurlinfo) == 0 || result.Req1.Data.Midurlinfo[0].Purl == "" {
@@ -202,29 +217,129 @@ func (c *Client) GetSongURL(songMid string, quality models.AudioQuality) (*model
 
 // GetSongURLWithFallback tries to get song URL with quality fallback
 func (c *Client) GetSongURLWithFallback(songMid string, preferredQuality models.AudioQuality) (*models.SongURL, error) {
-	// Quality priority order
-	qualities := []models.AudioQuality{
-		preferredQuality,
+	debugLog("[GetSongURLWithFallback] Getting URL for %s (preferred: %s, using guest mode for stability)", songMid, preferredQuality)
+
+	// Use guest mode directly for maximum stability
+	// Reason: High quality (320k/FLAC) downloads often fail with CDN 404
+	// even when API returns valid URL, because CDN requires APP-specific auth
+	// Guest mode (128k) works reliably for all songs
+	url, err := c.GetSongURLAuto(songMid)
+	if err == nil && url.URL != "" {
+		return url, nil
 	}
 
-	// Add fallback qualities
-	switch preferredQuality {
-	case models.QualityHiRes:
-		qualities = append(qualities, models.QualitySQ, models.QualityHQ, models.QualityStandard)
-	case models.QualitySQ:
-		qualities = append(qualities, models.QualityHQ, models.QualityStandard)
-	case models.QualityHQ:
-		qualities = append(qualities, models.QualityStandard)
+	return nil, fmt.Errorf("failed to get song URL: %v", err)
+}
+
+// GetSongURLAuto gets song URL without specifying quality (guest mode for stability)
+func (c *Client) GetSongURLAuto(songMid string) (*models.SongURL, error) {
+	c.mu.RLock()
+	cookies := c.cookies
+	c.mu.RUnlock()
+
+	// Use guest mode (uin=0) for maximum stability
+	// High quality downloads require APP-specific auth that we can't replicate
+	uin := int64(0)
+	debugLog("[GetSongURLAuto] Getting URL for %s (guest mode, uin=0)", songMid)
+
+	// Request without filename - let server auto-select best available quality for this user
+	reqData := map[string]interface{}{
+		"req_1": map[string]interface{}{
+			"module": "vkey.GetVkeyServer",
+			"method": "CgiGetVkey",
+			"param": map[string]interface{}{
+				"guid":      c.guid,
+				"songmid":   []string{songMid},
+				"songtype":  []int{0},
+				"uin":       fmt.Sprintf("%d", uin),
+				"loginflag": 1,
+				"platform":  "20",
+			},
+		},
+		"comm": map[string]interface{}{
+			"format": "json",
+			"uin":    uin,
+			"ct":     24,
+			"cv":     0,
+		},
 	}
 
-	for _, quality := range qualities {
-		url, err := c.GetSongURL(songMid, quality)
-		if err == nil && url.URL != "" {
-			return url, nil
-		}
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("failed to get song URL for any quality")
+	debugLog("[GetSongURLAuto] Request body: %s", string(jsonData))
+
+	resp, err := c.httpClient.R().
+		SetHeader("Cookie", cookies).
+		SetHeader("Referer", "https://y.qq.com/").
+		SetHeader("Origin", "https://y.qq.com").
+		SetHeader("Content-Type", "application/json;charset=UTF-8").
+		SetBody(jsonData).
+		Post("https://u.y.qq.com/cgi-bin/musicu.fcg")
+
+	if err != nil {
+		return nil, err
+	}
+
+	debugLog("[GetSongURLAuto] Response: %s", string(resp.Body()[:min(500, len(resp.Body()))]))
+
+	var result struct {
+		Code int `json:"code"`
+		Req1 struct {
+			Code int `json:"code"`
+			Data struct {
+				Msg        string   `json:"msg"`
+				Sip        []string `json:"sip"`
+				Midurlinfo []struct {
+					Purl     string `json:"purl"`
+					Songmid  string `json:"songmid"`
+					Filename string `json:"filename"`
+				} `json:"midurlinfo"`
+			} `json:"data"`
+		} `json:"req_1"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.Req1.Code != 0 {
+		return nil, fmt.Errorf("FCG API error: %d", result.Req1.Code)
+	}
+
+	if len(result.Req1.Data.Midurlinfo) == 0 || result.Req1.Data.Midurlinfo[0].Purl == "" {
+		debugLog("[GetSongURLAuto] No purl in response")
+		return nil, fmt.Errorf("no URL available")
+	}
+
+	serverURL := "https://ws.stream.qqmusic.qq.com"
+	if len(result.Req1.Data.Sip) > 0 && result.Req1.Data.Sip[0] != "" {
+		serverURL = strings.TrimSuffix(result.Req1.Data.Sip[0], "/")
+	}
+
+	purl := result.Req1.Data.Midurlinfo[0].Purl
+	fullURL := serverURL + "/" + purl
+	debugLog("[GetSongURLAuto] Got URL: %s", fullURL)
+
+	// Detect format from URL
+	actualExt := "m4a"
+	if strings.Contains(purl, ".m4a") {
+		actualExt = "m4a"
+	} else if strings.Contains(purl, ".mp3") {
+		actualExt = "mp3"
+	} else if strings.Contains(purl, ".flac") {
+		actualExt = "flac"
+	}
+	debugLog("[GetSongURLAuto] Detected format: %s", actualExt)
+
+	return &models.SongURL{
+		Mid:     songMid,
+		URL:     fullURL,
+		Quality: "auto",
+		Format:  actualExt,
+	}, nil
 }
 
 // GetSongInfo gets detailed information about a song

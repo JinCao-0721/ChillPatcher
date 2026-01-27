@@ -89,10 +89,17 @@ func (cm *CacheManager) SetCookies(cookies string) {
 // GetCachedFile returns the path to a cached file if it exists
 func (cm *CacheManager) GetCachedFile(songMid string, quality string) string {
 	filename := fmt.Sprintf("%s_%s", songMid, quality)
+	// Check both regular files and .tmp files (rename may have failed if file was in use)
 	for _, ext := range []string{".mp3", ".flac", ".m4a"} {
+		// Check regular file first
 		path := filepath.Join(cm.cacheDir, filename+ext)
 		if _, err := os.Stat(path); err == nil {
 			return path
+		}
+		// Check .tmp file (valid if download completed but rename failed)
+		tmpPath := path + ".tmp"
+		if info, err := os.Stat(tmpPath); err == nil && info.Size() > 0 {
+			return tmpPath
 		}
 	}
 	return ""
@@ -250,10 +257,10 @@ func (cm *CacheManager) download(task *downloadTask, key string) {
 	// Rename temp file to final path
 	debugLog("[download] Renaming temp file to: %s", task.filePath)
 	if err := os.Rename(task.tempPath, task.filePath); err != nil {
-		debugLog("[download] Rename error: %v", err)
-		os.Remove(task.tempPath)
-		task.setError(err)
-		return
+		// Rename may fail if file is in use by decoder - this is OK
+		// The temp file is still valid and can be used for playback
+		debugLog("[download] Rename error (file may be in use, keeping .tmp): %v", err)
+		// Don't remove temp file or set error - it's still usable
 	}
 
 	task.mu.Lock()
@@ -305,9 +312,17 @@ func (cm *CacheManager) cleanOldCache() {
 
 	now := time.Now()
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) == ".tmp" {
-			// Remove stale temp files
-			if filepath.Ext(entry.Name()) == ".tmp" {
+		if entry.IsDir() {
+			continue
+		}
+		// Handle .tmp files - only remove if very old (stale downloads)
+		if filepath.Ext(entry.Name()) == ".tmp" {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			// Only remove .tmp files older than 1 hour (stale incomplete downloads)
+			if now.Sub(info.ModTime()) > time.Hour {
 				os.Remove(filepath.Join(cm.cacheDir, entry.Name()))
 			}
 			continue

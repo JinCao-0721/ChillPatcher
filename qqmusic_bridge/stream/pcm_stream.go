@@ -162,6 +162,26 @@ func (s *PcmStream) openCachedFile(path string) error {
 	s.file = file
 	s.canSeek = true
 
+	// Detect actual format from file extension (may differ from requested quality)
+	ext := filepath.Ext(path)
+	// Handle .tmp extension
+	if ext == ".tmp" {
+		// Get the real extension before .tmp
+		basePath := path[:len(path)-4] // remove .tmp
+		ext = filepath.Ext(basePath)
+	}
+	switch ext {
+	case ".mp3":
+		s.format = "mp3"
+	case ".flac":
+		s.format = "flac"
+	case ".m4a":
+		s.format = "m4a"
+	case ".wav":
+		s.format = "wav"
+	}
+	debugLog("[openCachedFile] Detected format from path: %s -> %s", path, s.format)
+
 	if err := s.initDecoder(); err != nil {
 		file.Close()
 		s.err = err
@@ -253,9 +273,45 @@ func (s *PcmStream) initDecoder() error {
 		return s.initFLACDecoder()
 	case "m4a", "aac":
 		return s.initAACDecoder()
+	case "wav":
+		return s.initWAVDecoder()
 	default:
 		return fmt.Errorf("unsupported format: %s", s.format)
 	}
+}
+
+func (s *PcmStream) initWAVDecoder() error {
+	debugLog("[initWAVDecoder] Opening WAV file")
+
+	wavReader := wav.NewReader(s.file)
+	format, err := wavReader.Format()
+	if err != nil {
+		return fmt.Errorf("failed to read WAV format: %w", err)
+	}
+
+	s.decoder = wavReader
+	s.sampleRate = int(format.SampleRate)
+	s.channels = int(format.NumChannels)
+
+	// Get current file position (this is the start of WAV data after header)
+	dataOffset, _ := s.file.Seek(0, io.SeekCurrent)
+	s.wavDataOffset = dataOffset
+
+	// Calculate total frames
+	duration, _ := wavReader.Duration()
+	s.totalFrames = uint64(duration.Seconds() * float64(s.sampleRate))
+
+	debugLog("[initWAVDecoder] WAV SampleRate=%d, Channels=%d, TotalFrames=%d, DataOffset=%d", s.sampleRate, s.channels, s.totalFrames, s.wavDataOffset)
+
+	s.info = models.PcmStreamInfo{
+		SampleRate:  s.sampleRate,
+		Channels:    s.channels,
+		TotalFrames: s.totalFrames,
+		Format:      "wav",
+		CanSeek:     true,
+	}
+
+	return nil
 }
 
 func (s *PcmStream) initMP3Decoder() error {
