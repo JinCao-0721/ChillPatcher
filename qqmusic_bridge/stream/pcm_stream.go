@@ -375,24 +375,48 @@ func (s *PcmStream) initAACDecoder() error {
 	wavPath := filePath + ".wav"
 	debugLog("[initAACDecoder] Converting %s to WAV: %s", filePath, wavPath)
 
-	// Try to find ffmpeg
+	// Try to find ffmpeg in multiple locations
+	cacheDir := filepath.Dir(filePath)
 	ffmpegPaths := []string{
-		"ffmpeg",
-		"ffmpeg.exe",
-		filepath.Join(filepath.Dir(filePath), "ffmpeg.exe"),
+		"ffmpeg",     // system PATH
+		"ffmpeg.exe", // system PATH (Windows)
+		filepath.Join(cacheDir, "ffmpeg.exe"),                                                  // audio_cache dir
+		filepath.Join(cacheDir, "..", "..", "..", "..", "..", "..", "ffmpeg.exe"),                // game root (from audio_cache)
+		filepath.Join(cacheDir, "..", "..", "..", "..", "..", "..", "..", "ffmpeg.exe"),           // game root (alternative depth)
+	}
+
+	// Also try to find via executable path
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		ffmpegPaths = append(ffmpegPaths,
+			filepath.Join(exeDir, "ffmpeg.exe"),          // same dir as exe
+			filepath.Join(exeDir, "..", "ffmpeg.exe"),     // parent of exe dir
+			filepath.Join(exeDir, "..", "..", "ffmpeg.exe"), // grandparent of exe dir
+		)
 	}
 
 	var ffmpegPath string
 	for _, p := range ffmpegPaths {
-		if _, err := exec.LookPath(p); err == nil {
-			ffmpegPath = p
-			break
+		// For absolute paths, check if file exists directly
+		if filepath.IsAbs(p) {
+			if _, err := os.Stat(p); err == nil {
+				ffmpegPath = p
+				debugLog("[initAACDecoder] Found ffmpeg at: %s", p)
+				break
+			}
+		} else {
+			// For relative paths, use LookPath (searches PATH)
+			if found, err := exec.LookPath(p); err == nil {
+				ffmpegPath = found
+				debugLog("[initAACDecoder] Found ffmpeg via PATH: %s", found)
+				break
+			}
 		}
 	}
 
 	if ffmpegPath == "" {
-		// Try absolute path
-		ffmpegPath = "ffmpeg"
+		debugLog("[initAACDecoder] ffmpeg not found in any location, tried: %v", ffmpegPaths)
+		return fmt.Errorf("ffmpeg not found. Please install ffmpeg and add it to PATH, or place ffmpeg.exe in the game root directory")
 	}
 
 	// Run ffmpeg to convert M4A to WAV (hide console window on Windows)
