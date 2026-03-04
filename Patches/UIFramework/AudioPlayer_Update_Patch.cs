@@ -4,6 +4,7 @@ using UnityEngine;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Models;
 using Bulbul;
+using Cysharp.Threading.Tasks;
 using NestopiSystem.DIContainers;
 using ChillPatcher.UIFramework.Audio;
 
@@ -34,12 +35,18 @@ namespace ChillPatcher.Patches.UIFramework
         /// 防重入锁：防止 EOF 触发后、异步跳转完成前被重复触发
         /// </summary>
         private static bool _isSkippingToNext = false;
-        
+
         /// <summary>
         /// 记录已经触发过 EOF 的 stream ID，防止同一个 stream 被多次触发
         /// </summary>
         private static string _lastEofTriggeredStreamId = null;
-        
+
+        /// <summary>
+        /// 单曲循环 Seek(0) 后等待 IsEndOfStream 清除的标志
+        /// 防止 Seek(0) 后 IsEndOfStream 还未清除时重复触发 EOF
+        /// </summary>
+        private static bool _isLoopSeeking = false;
+
         /// <summary>
         /// 超时保护：上次播放位置变化的时间
         /// </summary>
@@ -54,6 +61,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             _lastEofTriggeredStreamId = null;
             _isSkippingToNext = false;
+            _isLoopSeeking = false;
             _lastProgressChangeTime = Time.time;
             _lastKnownProgress = 0f;
         }
@@ -71,15 +79,20 @@ namespace ChillPatcher.Patches.UIFramework
                 {
                     Plugin.Log.LogInfo($"[AudioPlayer_Patch] Single loop mode: replaying {currentAudio.AudioClipName} ({reason})");
 
-                    // 重置 EOF 追踪，允许重新播放
-                    _lastEofTriggeredStreamId = null;
+                    // 【重要】不重置 _lastEofTriggeredStreamId，防止 Seek(0) 后
+                    // IsEndOfStream 还没清除时重复触发 EOF
+                    // 改用 _isLoopSeeking 标志，等 IsEndOfStream 清除后再重置
                     _isSkippingToNext = false;
+                    _isLoopSeeking = true;
 
                     // 重新播放同一首歌（使用 Seek 到开头）
                     var reader = MusicService_SetProgress_Patch.ActivePcmReader;
                     if (reader != null)
                     {
                         reader.Seek(0);
+                        // 重置进度追踪，避免超时误触发
+                        _lastKnownProgress = 0f;
+                        _lastProgressChangeTime = Time.time;
                         return;
                     }
                 }
@@ -87,7 +100,7 @@ namespace ChillPatcher.Patches.UIFramework
 
             // 非单曲循环：跳到下一首
             Plugin.Log.LogInfo($"[AudioPlayer_Patch] {reason}, triggering next song");
-            musicService.SkipCurrentMusic(MusicChangeKind.Auto);
+            musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>();
         }
         
         [HarmonyPatch(typeof(AudioPlayer), nameof(AudioPlayer.Update))]
@@ -204,6 +217,18 @@ namespace ChillPatcher.Patches.UIFramework
                     return true; // 继续使用原始逻辑
                 }
 
+                // 【单曲循环 Seek 完成检测】
+                // Seek(0) 后等待 IsEndOfStream 清除，然后重置追踪状态
+                // 这样下次到达 EOF 时可以正常触发
+                if (_isLoopSeeking && !reader.IsEndOfStream)
+                {
+                    Plugin.Log.LogInfo("[AudioPlayer_Patch] Loop seek completed, ready for next EOF");
+                    _lastEofTriggeredStreamId = null;
+                    _isLoopSeeking = false;
+                    _lastKnownProgress = 0f;
+                    _lastProgressChangeTime = Time.time;
+                }
+
                 // 检查是否到达 EOF
                 if (reader.IsEndOfStream)
                 {
@@ -212,7 +237,7 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         return false; // 阻止原始逻辑，等待跳转完成
                     }
-                    
+
                     if (clipName == _lastEofTriggeredStreamId)
                     {
                         return false; // 已经触发过，阻止原始逻辑

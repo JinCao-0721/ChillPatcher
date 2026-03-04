@@ -121,9 +121,12 @@ namespace ChillPatcher.Patches.UIFramework
                     if (audioClip != null)
                     {
                         // 重新播放同一首歌
+                        // 【重要】使用 loop = false，让 onComplete 回调在歌曲结束时再次触发
+                        // 如果用 loop = true，AudioSource 会自行循环，onComplete 永远不触发
+                        // 那样如果用户之后关闭单曲循环，歌曲仍然会一直循环
                         SingletonMonoBehaviour<MusicManager>.Instance.Play(
                             audioClip, 1f, 0f, 1f,
-                            true,  // loop = true
+                            false,  // loop = false，依赖 onComplete 回调来循环
                             true, "",
                             () => OnMusicPlaybackComplete(musicService)
                         );
@@ -133,6 +136,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // 非单曲循环：跳到下一首
+            Plugin.Log.LogInfo("[PlayQueuePatch] OnMusicPlaybackComplete: advancing to next song");
             musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>();
         }
         
