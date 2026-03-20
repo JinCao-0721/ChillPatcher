@@ -7,7 +7,7 @@
 | 模块 | 保存位置 |
 |------|---------|
 | QQ 音乐 | `<游戏目录>\BepInEx\plugins\ChillPatcher\Modules\com.chillpatcher.qqmusic\data\qqmusic_cookie.json` |
-| 网易云音乐 | `C:\Users\<用户名>\AppData\Local\go-musicfox\cookie` |
+| 网易云音乐 | `C:\Users\<用户名>\AppData\Local\go-musicfox\db` |
 | Bilibili | `C:\Users\<用户名>\AppData\LocalLow\nestopi\Chill With You\ChillPatcher\com.chillpatcher.bilibili\bilibili_session.json` |
 
 如需重新登录，删除对应文件后重启游戏即可。
