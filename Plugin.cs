@@ -221,10 +221,38 @@ namespace ChillPatcher
                 try
                 {
                     Logger.LogDebug($"[TagSync] New tag registered: {tagInfo.DisplayName}");
-                    
+
                     // 确保在主线程执行 UI 刷新
                     UIFramework.Audio.MainThreadDispatcher.Instance?.Enqueue(() =>
                     {
+                        // 将新 Tag 的位值加入 CurrentAudioTag，使后续注册的歌曲能加入播放列表
+                        try
+                        {
+                            var currentTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value;
+                            var newBit = (AudioTag)tagInfo.BitValue;
+                            if (!currentTag.HasFlagFast(newBit))
+                            {
+                                SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag | newBit;
+                                Logger.LogInfo($"[TagSync] Added new tag to CurrentAudioTag: {tagInfo.DisplayName} (bit: {tagInfo.BitValue})");
+                            }
+                        }
+                        catch (Exception ex2)
+                        {
+                            Logger.LogWarning($"[TagSync] Failed to update CurrentAudioTag: {ex2.Message}");
+                        }
+
+                        // 将新 Tag 添加到下拉菜单
+                        ChillUIFramework.Music?.TagDropdown?.AddCustomTag(
+                            (AudioTag)tagInfo.BitValue,
+                            new UIFramework.Core.TagDropdownItem
+                            {
+                                Tag = (AudioTag)tagInfo.BitValue,
+                                DisplayName = tagInfo.DisplayName,
+                                Priority = 100 + tagInfo.SortOrder,
+                                ShowInDropdown = true
+                            }
+                        );
+
                         Patches.UIFramework.MusicTagListUI_Patches.RefreshCustomTagButtons();
                     });
                 }
@@ -415,6 +443,18 @@ namespace ChillPatcher
                 // 检查是否是当前正在播放的歌曲
                 bool isCurrentlyPlaying = musicService.PlayingMusic?.UUID == musicUUID;
 
+                // 从 _allMusicList（主列表）中移除，防止 Tag 切换时重新出现
+                var allMusicList = Traverse.Create(musicService)
+                    .Field("_allMusicList")
+                    .GetValue<List<GameAudioInfo>>();
+                var toRemoveAll = allMusicList?.FirstOrDefault(a => a.UUID == musicUUID);
+                if (toRemoveAll != null)
+                {
+                    allMusicList.Remove(toRemoveAll);
+                    Logger.LogInfo($"[MusicSync] Removed from AllMusicList: {musicUUID}");
+                }
+
+                // 从 CurrentPlayList（当前筛选列表）中移除
                 var currentPlayList = musicService.CurrentPlayList;
                 var toRemove = currentPlayList?.FirstOrDefault(a => a.UUID == musicUUID);
                 if (toRemove != null)
@@ -423,11 +463,18 @@ namespace ChillPatcher
                     Logger.LogInfo($"[MusicSync] Removed from CurrentPlayList: {musicUUID}");
                 }
 
-                // 如果移除的是当前播放的歌曲，自动播放下一首
+                // 如果移除的是当前播放的歌曲，且播放列表中还有歌曲，自动播放下一首
                 if (isCurrentlyPlaying)
                 {
-                    Logger.LogInfo($"[MusicSync] Current playing song was removed, skipping to next...");
-                    musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget();
+                    if (currentPlayList != null && currentPlayList.Count > 0)
+                    {
+                        Logger.LogInfo($"[MusicSync] Current playing song was removed, skipping to next... (remaining: {currentPlayList.Count})");
+                        musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget();
+                    }
+                    else
+                    {
+                        Logger.LogInfo($"[MusicSync] Current playing song was removed, but playlist is empty. Not skipping.");
+                    }
                 }
             }
             catch (Exception ex)

@@ -312,10 +312,13 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<Sprite> GetMusicCoverAsync(string uuid)
         {
-            // 登录歌曲返回二维码封面
-            if ((uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) && _qrLoginManager?.QRCodeSprite != null)
+            // 登录歌曲返回二维码封面（仅在二维码类型匹配时返回）
+            if (_qrLoginManager?.QRCodeSprite != null)
             {
-                return Task.FromResult(_qrLoginManager.QRCodeSprite);
+                if (uuid == _currentLoginSongUuid && _qrLoginManager.LoginType == "qq")
+                    return Task.FromResult(_qrLoginManager.QRCodeSprite);
+                if (uuid == _wxLoginSongUuid && _qrLoginManager.LoginType == "wx")
+                    return Task.FromResult(_qrLoginManager.QRCodeSprite);
             }
             return _coverLoader.GetMusicCoverAsync(uuid);
         }
@@ -327,9 +330,12 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<(byte[] data, string mimeType)> GetMusicCoverBytesAsync(string uuid)
         {
-            if ((uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) && _qrLoginManager?.QRCodeBytes != null)
+            if (_qrLoginManager?.QRCodeBytes != null)
             {
-                return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
+                if (uuid == _currentLoginSongUuid && _qrLoginManager.LoginType == "qq")
+                    return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
+                if (uuid == _wxLoginSongUuid && _qrLoginManager.LoginType == "wx")
+                    return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
             }
             return _coverLoader.GetMusicCoverBytesAsync(uuid);
         }

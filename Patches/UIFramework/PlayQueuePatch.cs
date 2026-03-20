@@ -39,6 +39,12 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static CancellationTokenSource _currentLoadCts;
         private static readonly object _ctsLock = new object();
+
+        /// <summary>
+        /// 连续加载失败计数器，用于防止所有歌曲都无法播放时的无限循环
+        /// </summary>
+        private static int _consecutiveFailures = 0;
+        private const int MaxConsecutiveFailures = 5;
         
         /// <summary>
         /// 获取用于队列填充的播放列表（使用显示顺序）
@@ -848,8 +854,15 @@ namespace ChillPatcher.Patches.UIFramework
             
             if (audioClip == null)
             {
-                Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audioInfo.Title}");
+                _consecutiveFailures++;
+                Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audioInfo.Title} (consecutive failures: {_consecutiveFailures}/{MaxConsecutiveFailures})");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                if (_consecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    Plugin.Log.LogError($"[PlayQueuePatch] Too many consecutive load failures ({_consecutiveFailures}), stopping auto-skip to prevent infinite loop");
+                    _consecutiveFailures = 0;
+                    return;
+                }
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 return;
             }
@@ -940,37 +953,59 @@ namespace ChillPatcher.Patches.UIFramework
             }
             catch (OperationCanceledException)
             {
-                Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled or timeout: {audio.Title}");
+                _consecutiveFailures++;
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled or timeout: {audio.Title} (consecutive failures: {_consecutiveFailures}/{MaxConsecutiveFailures})");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-                if (musicService.PlayingMusic?.UUID == audio.UUID)
+                if (_consecutiveFailures < MaxConsecutiveFailures && musicService.PlayingMusic?.UUID == audio.UUID)
                 {
                     await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
+                else if (_consecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    Plugin.Log.LogError($"[PlayQueuePatch] Too many consecutive load failures, stopping auto-skip");
+                    _consecutiveFailures = 0;
                 }
                 return false;
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlayQueuePatch] Failed to load audio clip: {ex.Message}");
+                _consecutiveFailures++;
+                Plugin.Log.LogError($"[PlayQueuePatch] Failed to load audio clip: {ex.Message} (consecutive failures: {_consecutiveFailures}/{MaxConsecutiveFailures})");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-                if (musicService.PlayingMusic?.UUID == audio.UUID)
+                if (_consecutiveFailures < MaxConsecutiveFailures && musicService.PlayingMusic?.UUID == audio.UUID)
                 {
                     await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
+                else if (_consecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    Plugin.Log.LogError($"[PlayQueuePatch] Too many consecutive load failures, stopping auto-skip");
+                    _consecutiveFailures = 0;
                 }
                 return false;
             }
             
             if (audioClip == null)
             {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] AudioClip is null for {audio.AudioClipName}");
+                _consecutiveFailures++;
+                Plugin.Log.LogWarning($"[PlayQueuePatch] AudioClip is null for {audio.AudioClipName} (consecutive failures: {_consecutiveFailures}/{MaxConsecutiveFailures})");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-                // 自动跳到下一首（与 PlayArugumentMusicCoreAsync 保持一致）
+                // 自动跳到下一首，但防止无限循环
+                if (_consecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    Plugin.Log.LogError($"[PlayQueuePatch] Too many consecutive load failures ({_consecutiveFailures}), stopping auto-skip to prevent infinite loop");
+                    _consecutiveFailures = 0;
+                    return false;
+                }
                 if (musicService.PlayingMusic?.UUID == audio.UUID)
                 {
                     await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 }
                 return false;
             }
-            
+
+            // 加载成功，重置连续失败计数器
+            _consecutiveFailures = 0;
+
             // 再次检查是否被取消（加载可能成功但用户已切换）
             if (musicService.PlayingMusic?.UUID != audio.UUID)
             {
@@ -978,7 +1013,7 @@ namespace ChillPatcher.Patches.UIFramework
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 return false;
             }
-            
+
             Plugin.Log.LogInfo($"[PlayQueuePatch] AudioClip ready: {audioClip.name}, loadType={audioClip.loadType}");
             
             // 加载音频数据（跳过流式 AudioClip，它们不需要预加载）
